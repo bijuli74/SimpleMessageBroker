@@ -3,12 +3,13 @@ package org.example;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
-import java.io.OutputStreamWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class Broker {
 
@@ -44,13 +45,50 @@ public class Broker {
     }
   }
 
-  private void handleConsumer(ObjectInputStream in, ObjectOutputStream out, Socket clientSocket) {
-    // TODO Auto-generated method stub
-    throw new UnsupportedOperationException("Unimplemented method 'handleConsumer'");
+  private void handleConsumer(ObjectInputStream in, ObjectOutputStream out, Socket socket)
+      throws ClassNotFoundException, IOException {
+    String topic = (String) in.readObject();
+
+    subscribers.computeIfAbsent(topic, k -> new CopyOnWriteArrayList<>()).add(socket);
+
+    Queue<Message> queue = messageQueues.get(topic);
+    if (queue != null) {
+      for (Message msg : queue) {
+        out.writeObject(msg);
+      }
+    }
+
   }
 
-  private void handleProducer(ObjectInputStream in) {
-    // TODO Auto-generated method stub
-    throw new UnsupportedOperationException("Unimplemented method 'handleProducer'");
+  private void handleProducer(ObjectInputStream in) throws ClassNotFoundException, IOException {
+    Message msg = (Message) in.readObject();
+    String topic = msg.getTopic();
+
+    messageQueues.computeIfAbsent(topic, k -> new ConcurrentLinkedQueue<>()).add(msg);
+
+    notifyConsumers(topic, msg);
+  }
+
+  private void notifyConsumers(String topic, Message msg) {
+    List<Socket> topicSubscribers = subscribers.get(topic);
+
+    if (topicSubscribers != null) {
+      for (Socket subscriber : topicSubscribers) {
+        Thread.startVirtualThread(() -> {
+          try {
+            ObjectOutputStream out = new ObjectOutputStream(subscriber.getOutputStream());
+            out.writeObject(msg);
+
+          } catch (IOException e) {
+            e.printStackTrace();
+          }
+        });
+      }
+    }
+  }
+
+  public static void main(String[] args) throws IOException {
+    Broker broker = new Broker();
+    broker.start(9090);
   }
 }
