@@ -18,7 +18,7 @@ public class Broker {
 
   public void start(int port) throws IOException {
     try (ServerSocket serverSocket = new ServerSocket(port)) {
-      System.err.println("Broker started on port: " + port);
+      System.out.println("Broker started on port: " + port);
 
       while (true) {
         Socket clientSocket = serverSocket.accept();
